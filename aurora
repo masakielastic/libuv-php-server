@@ -1,0 +1,341 @@
+#!/usr/bin/env bash
+
+# Aurora HTTP Server CLI Wrapper
+# Usage: aurora [command] [options]
+
+set -e
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXTENSION_PATH="$SCRIPT_DIR/modules/aurora.so"
+PHP_SCRIPT_PATH="$SCRIPT_DIR/bin/aurora-server.php"
+
+# Default values
+HOST="127.0.0.1"
+PORT="8080"
+DOCROOT="$(pwd)"
+TLS_CERT=""
+TLS_KEY=""
+VERBOSE=false
+HELP=false
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Print colored output
+print_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Print usage information
+print_usage() {
+    cat << EOF
+Aurora HTTP Server - libuv-based PHP HTTP server
+
+USAGE:
+    aurora [COMMAND] [OPTIONS]
+
+COMMANDS:
+    serve           Start HTTP server (default)
+    version         Show version information
+    help            Show this help message
+
+OPTIONS:
+    -h, --host HOST         Bind address (default: 127.0.0.1)
+    -p, --port PORT         Port number (default: 8080)
+    -d, --docroot PATH      Document root directory (default: current directory)
+    -t, --tls-cert FILE     TLS certificate file (enables HTTPS)
+    -k, --tls-key FILE      TLS private key file (required with --tls-cert)
+    -v, --verbose           Enable verbose output
+    --help                  Show this help message
+
+EXAMPLES:
+    aurora serve                                    # Start server on 127.0.0.1:8080
+    aurora serve -p 3000                           # Start server on port 3000
+    aurora serve -h 0.0.0.0 -p 8443               # Bind to all interfaces
+    aurora serve -d /var/www/html                  # Set document root
+    aurora serve -t cert.pem -k key.pem           # Enable HTTPS
+    aurora serve -h 0.0.0.0 -p 8080 -v           # Verbose mode
+
+For more information, visit: https://github.com/aurora/aurora
+EOF
+}
+
+# Check if extension is available
+check_extension() {
+    if [[ ! -f "$EXTENSION_PATH" ]]; then
+        print_error "Aurora extension not found at: $EXTENSION_PATH"
+        print_info "Please run 'make' to build the extension first"
+        exit 1
+    fi
+}
+
+# Validate TLS certificate files
+validate_tls() {
+    if [[ -n "$TLS_CERT" && -z "$TLS_KEY" ]]; then
+        print_error "TLS private key (--tls-key) is required when certificate is specified"
+        exit 1
+    fi
+    
+    if [[ -n "$TLS_KEY" && -z "$TLS_CERT" ]]; then
+        print_error "TLS certificate (--tls-cert) is required when private key is specified"
+        exit 1
+    fi
+    
+    if [[ -n "$TLS_CERT" && ! -f "$TLS_CERT" ]]; then
+        print_error "TLS certificate file not found: $TLS_CERT"
+        exit 1
+    fi
+    
+    if [[ -n "$TLS_KEY" && ! -f "$TLS_KEY" ]]; then
+        print_error "TLS private key file not found: $TLS_KEY"
+        exit 1
+    fi
+}
+
+# Create PHP server script if it doesn't exist
+create_php_script() {
+    mkdir -p "$(dirname "$PHP_SCRIPT_PATH")"
+    
+    cat > "$PHP_SCRIPT_PATH" << 'EOF'
+<?php
+// Aurora HTTP Server Bootstrap Script
+
+// Parse command line arguments
+$options = [];
+$args = array_slice($argv, 1);
+
+for ($i = 0; $i < count($args); $i++) {
+    switch ($args[$i]) {
+        case '--host':
+            $options['host'] = $args[++$i] ?? '127.0.0.1';
+            break;
+        case '--port':
+            $options['port'] = (int)($args[++$i] ?? 8080);
+            break;
+        case '--docroot':
+            $options['docroot'] = $args[++$i] ?? getcwd();
+            break;
+        case '--tls-cert':
+            $options['tls_cert'] = $args[++$i] ?? '';
+            break;
+        case '--tls-key':
+            $options['tls_key'] = $args[++$i] ?? '';
+            break;
+        case '--verbose':
+            $options['verbose'] = true;
+            break;
+    }
+}
+
+// Set defaults
+$options['host'] = $options['host'] ?? '127.0.0.1';
+$options['port'] = $options['port'] ?? 8080;
+$options['docroot'] = $options['docroot'] ?? getcwd();
+$options['verbose'] = $options['verbose'] ?? false;
+
+if ($options['verbose']) {
+    echo "Aurora HTTP Server starting...\n";
+    echo "Configuration:\n";
+    foreach ($options as $key => $value) {
+        if (is_bool($value)) {
+            $value = $value ? 'true' : 'false';
+        }
+        echo "  $key: $value\n";
+    }
+    echo "\n";
+}
+
+// Register default handler
+aurora_register_handler(function($env, $respond) use ($options) {
+    // Simple file serving logic
+    $url = $env['REQUEST_URI'] ?? '/';
+    $path = rtrim($options['docroot'], '/') . $url;
+    
+    if ($url === '/') {
+        $path .= '/index.php';
+    }
+    
+    if ($options['verbose']) {
+        echo "Request: {$env['REQUEST_METHOD']} $url -> $path\n";
+    }
+    
+    if (file_exists($path) && is_file($path)) {
+        if (pathinfo($path, PATHINFO_EXTENSION) === 'php') {
+            // Execute PHP file
+            ob_start();
+            try {
+                include $path;
+                $content = ob_get_contents();
+            } catch (Throwable $e) {
+                $content = "PHP Error: " . $e->getMessage();
+            } finally {
+                ob_end_clean();
+            }
+            
+            $respond(200, ['Content-Type' => 'text/html'], $content);
+        } else {
+            // Serve static file
+            $content = file_get_contents($path);
+            $mime_type = 'text/plain';
+            
+            $ext = pathinfo($path, PATHINFO_EXTENSION);
+            switch ($ext) {
+                case 'html': case 'htm': $mime_type = 'text/html'; break;
+                case 'css': $mime_type = 'text/css'; break;
+                case 'js': $mime_type = 'application/javascript'; break;
+                case 'json': $mime_type = 'application/json'; break;
+                case 'png': $mime_type = 'image/png'; break;
+                case 'jpg': case 'jpeg': $mime_type = 'image/jpeg'; break;
+                case 'gif': $mime_type = 'image/gif'; break;
+                case 'svg': $mime_type = 'image/svg+xml'; break;
+            }
+            
+            $respond(200, ['Content-Type' => $mime_type], $content);
+        }
+    } else {
+        $respond(404, ['Content-Type' => 'text/html'], 
+                 "<h1>404 Not Found</h1><p>The requested file was not found.</p>");
+    }
+});
+
+// Start the server
+echo "Aurora HTTP Server listening on http://{$options['host']}:{$options['port']}\n";
+echo "Document root: {$options['docroot']}\n";
+echo "Press Ctrl+C to stop\n\n";
+
+aurora_serve($options);
+EOF
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            serve)
+                COMMAND="serve"
+                shift
+                ;;
+            version)
+                COMMAND="version"
+                shift
+                ;;
+            help|--help|-h)
+                HELP=true
+                shift
+                ;;
+            --host)
+                HOST="$2"
+                shift 2
+                ;;
+            --port|-p)
+                PORT="$2"
+                shift 2
+                ;;
+            --docroot|-d)
+                DOCROOT="$2"
+                shift 2
+                ;;
+            --tls-cert|-t)
+                TLS_CERT="$2"
+                shift 2
+                ;;
+            --tls-key|-k)
+                TLS_KEY="$2"
+                shift 2
+                ;;
+            --verbose|-v)
+                VERBOSE=true
+                shift
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                print_usage
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Main execution
+main() {
+    local COMMAND="serve"
+    
+    # Parse arguments
+    parse_args "$@"
+    
+    # Show help if requested
+    if [[ "$HELP" == true ]]; then
+        print_usage
+        exit 0
+    fi
+    
+    # Handle commands
+    case "$COMMAND" in
+        version)
+            print_info "Aurora HTTP Server v0.1.0"
+            print_info "Built with libuv, llhttp, and PHP 8.4"
+            exit 0
+            ;;
+        serve)
+            check_extension
+            validate_tls
+            create_php_script
+            
+            if [[ "$VERBOSE" == true ]]; then
+                print_info "Starting Aurora HTTP Server..."
+                print_info "Host: $HOST"
+                print_info "Port: $PORT"
+                print_info "Document Root: $DOCROOT"
+                if [[ -n "$TLS_CERT" ]]; then
+                    print_info "TLS Certificate: $TLS_CERT"
+                    print_info "TLS Private Key: $TLS_KEY"
+                fi
+            fi
+            
+            # Build PHP command
+            local php_args=()
+            php_args+=("-d" "extension=$EXTENSION_PATH")
+            php_args+=("$PHP_SCRIPT_PATH")
+            php_args+=("--host" "$HOST")
+            php_args+=("--port" "$PORT")
+            php_args+=("--docroot" "$DOCROOT")
+            
+            if [[ -n "$TLS_CERT" ]]; then
+                php_args+=("--tls-cert" "$TLS_CERT")
+                php_args+=("--tls-key" "$TLS_KEY")
+            fi
+            
+            if [[ "$VERBOSE" == true ]]; then
+                php_args+=("--verbose")
+            fi
+            
+            # Execute PHP with Aurora extension
+            exec php "${php_args[@]}"
+            ;;
+        *)
+            print_error "Unknown command: $COMMAND"
+            print_usage
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function with all arguments
+main "$@"
