@@ -164,10 +164,12 @@ if ($options['verbose']) {
 
 // Start the server
 if (function_exists('aurora_serve')) {
-    $host = $options['host'];
-    $port = $options['port'];
-    $docroot = $options['docroot'];
-    echo "Aurora HTTP Server listening on http://{$host}:{$port}\n";
+    $host = $options['host'] ?? '127.0.0.1';
+    $port = $options['port'] ?? 8080;
+    $docroot = $options['docroot'] ?? getcwd();
+    $protocol = (isset($options['tls_cert']) && !empty($options['tls_cert'])) ? 'https' : 'http';
+
+    echo "Aurora HTTP Server listening on {$protocol}://{$host}:{$port}\n";
     echo "Document root: {$docroot}\n";
     echo "Press Ctrl+C to stop\n\n";
     aurora_serve($options);
