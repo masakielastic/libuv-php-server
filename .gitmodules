@@ -1,0 +1,3 @@
+[submodule "libuvhttp"]
+	path = libuvhttp
+	url = ../libuvhttp
