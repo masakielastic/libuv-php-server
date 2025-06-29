@@ -87,4 +87,31 @@ php tests/server_test.php
 -   **OpenSSL**: HTTPS/TLS通信をサポートするために使用されます。
 -   **llhttp**: Node.jsで使用されている高速なHTTPパーサーです。
 
+## コントリビューションガイドライン
+
+### コミットメッセージ
+
+本プロジェクトでは、コミットメッセージの規約として [Conventional Commits](https://www.conventionalcommits.org/) を採用します。これにより、変更履歴の可読性を高め、バージョン管理を自動化しやすくします。
+
+コミットメッセージは以下の形式に従ってください。
+
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+-   **type**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore` など。
+-   **scope**: 変更が影響する範囲（例: `http`, `tls`, `build`）。
+-   **description**: 変更内容の簡潔な説明。
+
+**例:**
+
+```
+feat(http): add support for chunked transfer encoding
+```
+
+
 ```
