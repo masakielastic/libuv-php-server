@@ -35,7 +35,7 @@ if test "$PHP_AURORA" != "no"; then
   fi
 
   PHP_ADD_INCLUDE($HTTPSERVER_DIR)
-  AURORA_SHARED_LIBADD="-L$HTTPSERVER_DIR -lhttpserver $AURORA_SHARED_LIBADD"
+  AURORA_SHARED_LIBADD="-Wl,--whole-archive -L$HTTPSERVER_DIR -lhttpserver -Wl,--no-whole-archive $AURORA_SHARED_LIBADD"
 
   dnl Define extension
   PHP_NEW_EXTENSION(aurora, aurora.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)

@@ -367,8 +367,8 @@ static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
 
 static void on_write(uv_write_t* req, int status) {
     if (req->data) free(req->data);
-    free(req);
     uv_close((uv_handle_t*)req->handle, on_close);
+    free(req);
 }
 
 // llhttp callbacks

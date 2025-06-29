@@ -7,7 +7,7 @@
 *.la
 *.o
 *.so
-Makefile
+/Makefile
 Makefile.fragments
 Makefile.objects
 aurora.dep
