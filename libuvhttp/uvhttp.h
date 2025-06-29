@@ -1,5 +1,5 @@
-#ifndef AURORAHTTP_H
-#define AURORAHTTP_H
+#ifndef UVHTTP_H
+#define UVHTTP_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,10 +66,10 @@ void http_response_destroy(http_response_t* response);
 }
 #endif
 
-#endif // AURORAHTTP_H
+#endif // UVHTTP_H
 
 
-#ifdef AURORAHTTP_IMPL
+#ifdef UVHTTP_IMPL
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -473,4 +473,5 @@ static int on_message_complete(llhttp_t* parser) {
     return 0;
 }
 
-#endif // AURORAHTTP_IMPL
+#endif // UVHTTP_IMPL
+

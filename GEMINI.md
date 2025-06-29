@@ -2,7 +2,7 @@
 
 ## プロジェクトの概要
 
-このプロジェクトは、`libuv` を基盤とした高性能な非同期HTTPサーバー「Aurora」です。PHPのビルトイン開発サーバーの代替となることを目指しており、C言語で記述されたPHP拡張機能として実装されています。
+このプロジェクトは、`libuv` を基盤とした高性能な非同期HTTPサーバー「uvhttp」です。PHPのビルトイン開発サーバーの代替となることを目指しており、C言語で記述されたPHP拡張機能として実装されています。
 
 主な機能は以下の通りです。
 
@@ -15,13 +15,13 @@
 ## プロジェクト構造
 
 ```
-├── aurora.c           # C言語で記述された拡張機能のコア部分
-├── php_aurora.h       # 拡張機能のヘッダーファイル
+├── uvhttp.c           # C言語で記述された拡張機能のコア部分
+├── php_uvhttp.h       # 拡張機能のヘッダーファイル
 ├── config.m4          # ビルド設定
 ├── llhttp.c           # HTTPパーサー (llhttp)
 ├── llhttp.h           # HTTPパーサーのヘッダー
 ├── bin/
-│   └── aurora-server.php # サーバーを起動するためのPHPスクリプト
+│   └── uvhttp-server.php # サーバーを起動するためのPHPスクリプト
 ├── public/            # デモ用のWebファイル
 │   ├── index.php
 │   └── test.html
@@ -46,7 +46,7 @@
 2.  **拡張機能のビルド**
     ```bash
     phpize
-    ./configure
+    ./configure --enable-uvhttp
     make
     ```
 
@@ -54,17 +54,17 @@
 
 -   **HTTPサーバーの起動**
     ```bash
-    php bin/aurora-server.php --host=127.0.0.1 --port=8080 --docroot=public
+    php bin/uvhttp-server.php --host=127.0.0.1 --port=8080 --docroot=public
     ```
 
 -   **HTTPSサーバーの起動**
     ```bash
     # 自己署名証明書の生成
     openssl req -x509 -newkey rsa:2048 -keyout server.key -out server.crt \
-      -days 365 -nodes -subj "/C=US/ST=Test/L=Test/O=Aurora/CN=localhost"
+      -days 365 -nodes -subj "/C=US/ST=Test/L=Test/O=uvhttp/CN=localhost"
 
     # サーバーを起動
-    php bin/aurora-server.php --port=8443 --docroot=public --tls-cert=server.crt --tls-key=server.key
+    php bin/uvhttp-server.php --port=8443 --docroot=public --tls-cert=server.crt --tls-key=server.key
     ```
 
 ## テスト

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-# Aurora HTTP Server CLI Wrapper
-# Usage: aurora [command] [options]
+# uvhttp HTTP Server CLI Wrapper
+# Usage: uvhttp [command] [options]
 
 set -e
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXTENSION_PATH="$SCRIPT_DIR/modules/aurora.so"
-PHP_SCRIPT_PATH="$SCRIPT_DIR/bin/aurora-server.php"
+EXTENSION_PATH="$SCRIPT_DIR/modules/uvhttp.so"
+PHP_SCRIPT_PATH="$SCRIPT_DIR/bin/uvhttp-server.php"
 
 # Default values
 HOST="127.0.0.1"
@@ -46,11 +46,11 @@ print_error() {
 # Print usage information
 print_usage() {
     cat << EOF
-Aurora HTTP Server - libuv-based PHP HTTP server
+uvhttp HTTP Server - libuv-based PHP HTTP server
 
 USAGE:
-    aurora [OPTIONS]
-    aurora [COMMAND]
+    uvhttp [OPTIONS]
+    uvhttp [COMMAND]
 
 COMMANDS:
     version         Show version information
@@ -66,21 +66,21 @@ OPTIONS:
     --help                  Show this help message
 
 EXAMPLES:
-    aurora                                    # Start server on 127.0.0.1:8080
-    aurora -p 3000                           # Start server on port 3000
-    aurora -h 0.0.0.0 -p 8443               # Bind to all interfaces
-    aurora -d /var/www/html                  # Set document root
-    aurora -t cert.pem -k key.pem           # Enable HTTPS
-    aurora -h 0.0.0.0 -p 8080 -v           # Verbose mode
+    uvhttp                                    # Start server on 127.0.0.1:8080
+    uvhttp -p 3000                           # Start server on port 3000
+    uvhttp -h 0.0.0.0 -p 8443               # Bind to all interfaces
+    uvhttp -d /var/www/html                  # Set document root
+    uvhttp -t cert.pem -k key.pem           # Enable HTTPS
+    uvhttp -h 0.0.0.0 -p 8080 -v           # Verbose mode
 
-For more information, visit: https://github.com/aurora/aurora
+For more information, visit: https://github.com/your-repo/uvhttp
 EOF
 }
 
 # Check if extension is available
 check_extension() {
     if [[ ! -f "$EXTENSION_PATH" ]]; then
-        print_error "Aurora extension not found at: $EXTENSION_PATH"
+        print_error "uvhttp extension not found at: $EXTENSION_PATH"
         print_info "Please run 'make' to build the extension first"
         exit 1
     fi
@@ -115,7 +115,7 @@ create_php_script() {
     
     cat > "$PHP_SCRIPT_PATH" << 'EOF'
 <?php
-// Aurora HTTP Server Bootstrap Script
+// uvhttp HTTP Server Bootstrap Script
 
 // Parse command line arguments
 $options = [];
@@ -151,7 +151,7 @@ $options['docroot'] = $options['docroot'] ?? getcwd();
 $options['verbose'] = $options['verbose'] ?? false;
 
 if ($options['verbose']) {
-    echo "Aurora HTTP Server starting...\n";
+    echo "uvhttp HTTP Server starting...\n";
     echo "Configuration:\n";
     foreach ($options as $key => $value) {
         if (is_bool($value)) {
@@ -163,18 +163,18 @@ if ($options['verbose']) {
 }
 
 // Start the server
-if (function_exists('aurora_serve')) {
+if (function_exists('uvhttp_serve')) {
     $host = $options['host'] ?? '127.0.0.1';
     $port = $options['port'] ?? 8080;
     $docroot = $options['docroot'] ?? getcwd();
     $protocol = (isset($options['tls_cert']) && !empty($options['tls_cert'])) ? 'https' : 'http';
 
-    echo "Aurora HTTP Server listening on {$protocol}://{$host}:{$port}\n";
+    echo "uvhttp HTTP Server listening on {$protocol}://{$host}:{$port}\n";
     echo "Document root: {$docroot}\n";
     echo "Press Ctrl+C to stop\n\n";
-    aurora_serve($options);
+    uvhttp_serve($options);
 } else {
-    echo "Error: The 'aurora' extension is not loaded or the 'aurora_serve' function is not available.\n";
+    echo "Error: The 'uvhttp' extension is not loaded or the 'uvhttp_serve' function is not available.\n";
     exit(1);
 }
 EOF
@@ -239,7 +239,7 @@ main() {
             exit 0
             ;;
         version)
-            print_info "Aurora HTTP Server v0.1.0"
+            print_info "uvhttp HTTP Server v0.1.0"
             print_info "Built with libuv, llhttp, and PHP 8.4"
             exit 0
             ;;
@@ -249,7 +249,7 @@ main() {
             create_php_script
             
             if [[ "$VERBOSE" == true ]]; then
-                print_info "Starting Aurora HTTP Server..."
+                print_info "Starting uvhttp HTTP Server..."
                 print_info "Host: $HOST"
                 print_info "Port: $PORT"
                 print_info "Document Root: $DOCROOT"
@@ -276,7 +276,7 @@ main() {
                 php_args+=("--verbose")
             fi
             
-            # Execute PHP with Aurora extension
+            # Execute PHP with uvhttp extension
             exec php "${php_args[@]}"
             ;;
         *)

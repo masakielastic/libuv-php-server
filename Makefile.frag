@@ -1,4 +1,4 @@
-aurora.lo: libaurora/libaurora.a
+uvhttp.lo: libuvhttp/libuvhttp.a
 
-libaurora/libaurora.a:
-	$(MAKE) -C libaurora
+libuvhttp/libuvhttp.a:
+	$(MAKE) -C libuvhttp

@@ -6,81 +6,81 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "ext/standard/php_smart_string.h"
-#include "php_aurora.h"
+#include "php_uvhttp.h"
 
 #include "main/php_output.h"
 #include "Zend/zend_compile.h"
 #include "Zend/zend_execute.h"
 #include <sys/stat.h>
 
-#include "libaurora/aurorahttp.h"
+#include "libuvhttp/uvhttp.h"
 
 /* PHP-Faced functions */
-PHP_FUNCTION(aurora_serve);
-PHP_FUNCTION(aurora_stop);
+PHP_FUNCTION(uvhttp_serve);
+PHP_FUNCTION(uvhttp_stop);
 
 /* Module lifecycle functions */
-PHP_MINIT_FUNCTION(aurora);
-PHP_MSHUTDOWN_FUNCTION(aurora);
-PHP_RINIT_FUNCTION(aurora);
-PHP_RSHUTDOWN_FUNCTION(aurora);
-PHP_MINFO_FUNCTION(aurora);
+PHP_MINIT_FUNCTION(uvhttp);
+PHP_MSHUTDOWN_FUNCTION(uvhttp);
+PHP_RINIT_FUNCTION(uvhttp);
+PHP_RSHUTDOWN_FUNCTION(uvhttp);
+PHP_MINFO_FUNCTION(uvhttp);
 
 /* Module globals */
-ZEND_DECLARE_MODULE_GLOBALS(aurora)
+ZEND_DECLARE_MODULE_GLOBALS(uvhttp)
 
 
 // Forward declarations
-static void aurora_request_handler(http_request_t* request);
-static zend_string* aurora_execute_php_file(const char* file_path, http_request_t* request);
-static zend_string* aurora_serve_static_file(const char* file_path);
-static char* aurora_resolve_file_path(const char* docroot, const char* url);
-static const char* aurora_get_mime_type(const char* file_path);
-static void aurora_populate_superglobals(http_request_t* request, const char* docroot, const char* script_name);
+static void uvhttp_request_handler(http_request_t* request);
+static zend_string* uvhttp_execute_php_file(const char* file_path, http_request_t* request);
+static zend_string* uvhttp_serve_static_file(const char* file_path);
+static char* uvhttp_resolve_file_path(const char* docroot, const char* url);
+static const char* uvhttp_get_mime_type(const char* file_path);
+static void uvhttp_populate_superglobals(http_request_t* request, const char* docroot, const char* script_name);
 
 /* Argument info */
-ZEND_BEGIN_ARG_INFO_EX(arginfo_aurora_serve, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_uvhttp_serve, 0, 0, 0)
     ZEND_ARG_TYPE_INFO(0, options, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO_EX(arginfo_aurora_stop, 0, 0, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_uvhttp_stop, 0, 0, 0)
 ZEND_END_ARG_INFO()
 
 /* Function entries */
-const zend_function_entry aurora_functions[] = {
-    PHP_FE(aurora_serve, arginfo_aurora_serve)
-    PHP_FE(aurora_stop, arginfo_aurora_stop)
+const zend_function_entry uvhttp_functions[] = {
+    PHP_FE(uvhttp_serve, arginfo_uvhttp_serve)
+    PHP_FE(uvhttp_stop, arginfo_uvhttp_stop)
     PHP_FE_END
 };
 
 /* Module entry */
-zend_module_entry aurora_module_entry = {
+zend_module_entry uvhttp_module_entry = {
     STANDARD_MODULE_HEADER,
-    "aurora",
-    aurora_functions,
-    PHP_MINIT(aurora),
-    PHP_MSHUTDOWN(aurora),
-    PHP_RINIT(aurora),
-    PHP_RSHUTDOWN(aurora),
-    PHP_MINFO(aurora),
-    PHP_AURORA_VERSION,
+    "uvhttp",
+    uvhttp_functions,
+    PHP_MINIT(uvhttp),
+    PHP_MSHUTDOWN(uvhttp),
+    PHP_RINIT(uvhttp),
+    PHP_RSHUTDOWN(uvhttp),
+    PHP_MINFO(uvhttp),
+    PHP_UVHTTP_VERSION,
     STANDARD_MODULE_PROPERTIES
 };
 
-#ifdef COMPILE_DL_AURORA
-ZEND_GET_MODULE(aurora)
+#ifdef COMPILE_DL_UVHTTP
+ZEND_GET_MODULE(uvhttp)
 #endif
 
-static void php_aurora_init_globals(zend_aurora_globals* aurora_globals)
+static void php_uvhttp_init_globals(zend_uvhttp_globals* uvhttp_globals)
 {
-    aurora_globals->server = NULL;
-    aurora_globals->docroot = NULL;
+    uvhttp_globals->server = NULL;
+    uvhttp_globals->docroot = NULL;
 }
 
 /* Main request handler called by libhttpserver */
-static void aurora_request_handler(http_request_t* request) {
+static void uvhttp_request_handler(http_request_t* request) {
     const char* url = http_request_target(request);
-    char* file_path = aurora_resolve_file_path(AURORA_G(docroot), url);
+    char* file_path = uvhttp_resolve_file_path(UVHTTP_G(docroot), url);
 
     if (!file_path) {
         http_response_t* response = http_response_init();
@@ -108,10 +108,10 @@ static void aurora_request_handler(http_request_t* request) {
 
     char* ext = strrchr(file_path, '.');
     if (ext && strcmp(ext, ".php") == 0) {
-        output = aurora_execute_php_file(file_path, request);
+        output = uvhttp_execute_php_file(file_path, request);
     } else {
-        output = aurora_serve_static_file(file_path);
-        mime_type = aurora_get_mime_type(file_path);
+        output = uvhttp_serve_static_file(file_path);
+        mime_type = uvhttp_get_mime_type(file_path);
     }
 
     if (!output) {
@@ -132,7 +132,7 @@ static void aurora_request_handler(http_request_t* request) {
 
 
 /* PHP Functions */
-PHP_FUNCTION(aurora_serve) {
+PHP_FUNCTION(uvhttp_serve) {
     HashTable* options = NULL;
     
     ZEND_PARSE_PARAMETERS_START(0, 1)
@@ -140,18 +140,18 @@ PHP_FUNCTION(aurora_serve) {
         Z_PARAM_ARRAY_HT(options)
     ZEND_PARSE_PARAMETERS_END();
     
-    if (AURORA_G(server)) {
-        php_error_docref(NULL, E_WARNING, "Aurora server is already running");
+    if (UVHTTP_G(server)) {
+        php_error_docref(NULL, E_WARNING, "uvhttp server is already running");
         RETURN_FALSE;
     }
 
     http_server_config_t config = {0};
     config.host = "127.0.0.1";
     config.port = 8080;
-    config.handler = aurora_request_handler;
+    config.handler = uvhttp_request_handler;
 
     char* docroot_str = getcwd(NULL, 0);
-    AURORA_G(docroot) = docroot_str;
+    UVHTTP_G(docroot) = docroot_str;
 
     if (options) {
         zval* val;
@@ -163,7 +163,7 @@ PHP_FUNCTION(aurora_serve) {
         }
         if ((val = zend_hash_str_find(options, "docroot", 7)) != NULL) {
             free(docroot_str); // free the cwd default
-            AURORA_G(docroot) = zval_get_string(val)->val;
+            UVHTTP_G(docroot) = zval_get_string(val)->val;
         }
         
         zval* tls_cert = zend_hash_str_find(options, "tls_cert", 8);
@@ -176,70 +176,70 @@ PHP_FUNCTION(aurora_serve) {
         }
     }
     
-    AURORA_G(server) = http_server_create(&config);
-    if (!AURORA_G(server)) {
+    UVHTTP_G(server) = http_server_create(&config);
+    if (!UVHTTP_G(server)) {
         php_error_docref(NULL, E_ERROR, "Failed to create server");
         free(docroot_str);
-        AURORA_G(docroot) = NULL;
+        UVHTTP_G(docroot) = NULL;
         RETURN_FALSE;
     }
     
-    http_server_listen(AURORA_G(server));
+    http_server_listen(UVHTTP_G(server));
 
     // Cleanup after listen returns
-    http_server_destroy(AURORA_G(server));
-    AURORA_G(server) = NULL;
+    http_server_destroy(UVHTTP_G(server));
+    UVHTTP_G(server) = NULL;
     free(docroot_str);
-    AURORA_G(docroot) = NULL;
+    UVHTTP_G(docroot) = NULL;
 
     RETURN_TRUE;
 }
 
-PHP_FUNCTION(aurora_stop) {
-    if (AURORA_G(server)) {
-        uv_stop(http_server_loop(AURORA_G(server)));
+PHP_FUNCTION(uvhttp_stop) {
+    if (UVHTTP_G(server)) {
+        uv_stop(http_server_loop(UVHTTP_G(server)));
         RETURN_TRUE;
     }
     RETURN_FALSE;
 }
 
 /* Module lifecycle functions */
-PHP_MINIT_FUNCTION(aurora) {
-    ZEND_INIT_MODULE_GLOBALS(aurora, php_aurora_init_globals, NULL);
+PHP_MINIT_FUNCTION(uvhttp) {
+    ZEND_INIT_MODULE_GLOBALS(uvhttp, php_uvhttp_init_globals, NULL);
     return SUCCESS;
 }
 
-PHP_MSHUTDOWN_FUNCTION(aurora) {
+PHP_MSHUTDOWN_FUNCTION(uvhttp) {
     return SUCCESS;
 }
 
-PHP_RINIT_FUNCTION(aurora) {
+PHP_RINIT_FUNCTION(uvhttp) {
     return SUCCESS;
 }
 
-PHP_RSHUTDOWN_FUNCTION(aurora) {
-    if (AURORA_G(server)) {
-        http_server_destroy(AURORA_G(server));
-        AURORA_G(server) = NULL;
+PHP_RSHUTDOWN_FUNCTION(uvhttp) {
+    if (UVHTTP_G(server)) {
+        http_server_destroy(UVHTTP_G(server));
+        UVHTTP_G(server) = NULL;
     }
-    if (AURORA_G(docroot)) {
-        free(AURORA_G(docroot));
-        AURORA_G(docroot) = NULL;
+    if (UVHTTP_G(docroot)) {
+        free(UVHTTP_G(docroot));
+        UVHTTP_G(docroot) = NULL;
     }
     return SUCCESS;
 }
 
-PHP_MINFO_FUNCTION(aurora) {
+PHP_MINFO_FUNCTION(uvhttp) {
     php_info_print_table_start();
-    php_info_print_table_header(2, "Aurora HTTP Server", "enabled");
-    php_info_print_table_row(2, "Version", PHP_AURORA_VERSION);
+    php_info_print_table_header(2, "uvhttp HTTP Server", "enabled");
+    php_info_print_table_row(2, "Version", PHP_UVHTTP_VERSION);
     php_info_print_table_row(2, "Server Library", "libhttpserver (internal)");
     php_info_print_table_end();
 }
 
 /* Helper Functions */
 
-static void aurora_populate_superglobals(http_request_t* request, const char* docroot, const char* script_name) {
+static void uvhttp_populate_superglobals(http_request_t* request, const char* docroot, const char* script_name) {
     zval server_array;
     array_init(&server_array);
 
@@ -261,7 +261,7 @@ static void aurora_populate_superglobals(http_request_t* request, const char* do
     }
 
     add_assoc_string(&server_array, "SERVER_PROTOCOL", "HTTP/1.1");
-    add_assoc_string(&server_array, "SERVER_SOFTWARE", "Aurora/0.2.0");
+    add_assoc_string(&server_array, "SERVER_SOFTWARE", "uvhttp/0.2.0");
     add_assoc_string(&server_array, "DOCUMENT_ROOT", (char*)docroot);
     add_assoc_string(&server_array, "SCRIPT_NAME", (char*)script_name);
     add_assoc_string(&server_array, "SCRIPT_FILENAME", (char*)script_name);
@@ -286,7 +286,7 @@ static void aurora_populate_superglobals(http_request_t* request, const char* do
     zend_hash_str_update(&EG(symbol_table), "_POST", sizeof("_POST") - 1, &post_array);
 }
 
-static zend_string* aurora_execute_php_file(const char* file_path, http_request_t* request) {
+static zend_string* uvhttp_execute_php_file(const char* file_path, http_request_t* request) {
     zend_file_handle file_handle;
     zend_string *result;
 
@@ -294,7 +294,7 @@ static zend_string* aurora_execute_php_file(const char* file_path, http_request_
         return zend_string_init("Failed to start output buffering", sizeof("Failed to start output buffering")-1, 0);
     }
 
-    aurora_populate_superglobals(request, AURORA_G(docroot), file_path);
+    uvhttp_populate_superglobals(request, UVHTTP_G(docroot), file_path);
 
     zend_stream_init_filename(&file_handle, file_path);
     if (zend_execute_scripts(ZEND_REQUIRE, NULL, 1, &file_handle) != SUCCESS) {
@@ -316,7 +316,7 @@ static zend_string* aurora_execute_php_file(const char* file_path, http_request_
     return result;
 }
 
-static zend_string* aurora_serve_static_file(const char* file_path) {
+static zend_string* uvhttp_serve_static_file(const char* file_path) {
     FILE* file = fopen(file_path, "rb");
     if (!file) return NULL;
 
@@ -342,7 +342,7 @@ static zend_string* aurora_serve_static_file(const char* file_path) {
     return content;
 }
 
-static char* aurora_resolve_file_path(const char* docroot, const char* url) {
+static char* uvhttp_resolve_file_path(const char* docroot, const char* url) {
     const char* path = url;
     if (strcmp(url, "/") == 0) {
         path = "/index.php";
@@ -360,7 +360,7 @@ static char* aurora_resolve_file_path(const char* docroot, const char* url) {
     return file_path;
 }
 
-static const char* aurora_get_mime_type(const char* file_path) {
+static const char* uvhttp_get_mime_type(const char* file_path) {
     char* ext = strrchr(file_path, '.');
     if (!ext) return "application/octet-stream";
     if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0) return "text/html";
