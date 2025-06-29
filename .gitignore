@@ -36,6 +36,7 @@ libhttpserver/*.a
 # Local TLS certificates
 server.key
 server.crt
+*.pem
 
 # IDE configuration
 .vscode/
