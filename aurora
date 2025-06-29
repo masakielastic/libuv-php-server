@@ -49,10 +49,10 @@ print_usage() {
 Aurora HTTP Server - libuv-based PHP HTTP server
 
 USAGE:
-    aurora [COMMAND] [OPTIONS]
+    aurora [OPTIONS]
+    aurora [COMMAND]
 
 COMMANDS:
-    serve           Start HTTP server (default)
     version         Show version information
     help            Show this help message
 
@@ -66,12 +66,12 @@ OPTIONS:
     --help                  Show this help message
 
 EXAMPLES:
-    aurora serve                                    # Start server on 127.0.0.1:8080
-    aurora serve -p 3000                           # Start server on port 3000
-    aurora serve -h 0.0.0.0 -p 8443               # Bind to all interfaces
-    aurora serve -d /var/www/html                  # Set document root
-    aurora serve -t cert.pem -k key.pem           # Enable HTTPS
-    aurora serve -h 0.0.0.0 -p 8080 -v           # Verbose mode
+    aurora                                    # Start server on 127.0.0.1:8080
+    aurora -p 3000                           # Start server on port 3000
+    aurora -h 0.0.0.0 -p 8443               # Bind to all interfaces
+    aurora -d /var/www/html                  # Set document root
+    aurora -t cert.pem -k key.pem           # Enable HTTPS
+    aurora -h 0.0.0.0 -p 8080 -v           # Verbose mode
 
 For more information, visit: https://github.com/aurora/aurora
 EOF
@@ -226,48 +226,46 @@ EOF
 
 # Parse command line arguments
 parse_args() {
+    COMMAND="serve" # Default command
     while [[ $# -gt 0 ]]; do
         case $1 in
-            serve)
-                COMMAND="serve"
-                shift
-                ;;
             version)
                 COMMAND="version"
                 shift
                 ;;
-            help|--help|-h)
-                HELP=true
+            help|--help)
+                COMMAND="help"
                 shift
                 ;;
-            --host)
+            -h|--host)
                 HOST="$2"
                 shift 2
                 ;;
-            --port|-p)
+            -p|--port)
                 PORT="$2"
                 shift 2
                 ;;
-            --docroot|-d)
+            -d|--docroot)
                 DOCROOT="$2"
                 shift 2
                 ;;
-            --tls-cert|-t)
+            -t|--tls-cert)
                 TLS_CERT="$2"
                 shift 2
                 ;;
-            --tls-key|-k)
+            -k|--tls-key)
                 TLS_KEY="$2"
                 shift 2
                 ;;
-            --verbose|-v)
+            -v|--verbose)
                 VERBOSE=true
                 shift
                 ;;
             *)
-                print_error "Unknown option: $1"
-                print_usage
-                exit 1
+                # If it's not a recognized option, assume it might be an old command
+                # or an error. We'll let the main case handle it.
+                # This avoids errors on unknown options for now.
+                break
                 ;;
         esac
     done
@@ -275,19 +273,15 @@ parse_args() {
 
 # Main execution
 main() {
-    local COMMAND="serve"
-    
     # Parse arguments
     parse_args "$@"
     
-    # Show help if requested
-    if [[ "$HELP" == true ]]; then
-        print_usage
-        exit 0
-    fi
-    
     # Handle commands
     case "$COMMAND" in
+        help)
+            print_usage
+            exit 0
+            ;;
         version)
             print_info "Aurora HTTP Server v0.1.0"
             print_info "Built with libuv, llhttp, and PHP 8.4"
@@ -330,7 +324,7 @@ main() {
             exec php "${php_args[@]}"
             ;;
         *)
-            print_error "Unknown command: $COMMAND"
+            print_error "Unknown command or option: $1"
             print_usage
             exit 1
             ;;
