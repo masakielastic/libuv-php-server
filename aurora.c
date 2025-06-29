@@ -298,15 +298,20 @@ static zend_string* aurora_execute_php_file(const char* file_path, http_request_
 
     zend_stream_init_filename(&file_handle, file_path);
     if (zend_execute_scripts(ZEND_REQUIRE, NULL, 1, &file_handle) != SUCCESS) {
-        php_output_end();
+        while (php_output_get_level() > 0) {
+            php_output_discard();
+        }
         return zend_string_init("<h1>500 Internal Server Error</h1>", sizeof("<h1>500 Internal Server Error</h1>")-1, 0);
     }
 
     zval output_zval;
     php_output_get_contents(&output_zval);
     result = zval_get_string(&output_zval);
+    zval_ptr_dtor(&output_zval);
 
-    php_output_discard();
+    while (php_output_get_level() > 0) {
+        php_output_discard();
+    }
 
     return result;
 }
