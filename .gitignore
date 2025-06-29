@@ -1,0 +1,41 @@
+# PHP extension build artifacts
+/modules/
+/build/
+/.libs/
+*.lo
+*.la
+*.o
+*.so
+Makefile
+Makefile.fragments
+Makefile.objects
+aurora.dep
+aclocal.m4
+autom4te.cache/
+configure
+configure.ac
+config.guess
+config.sub
+config.h
+config.h.in
+config.h.in~
+config.log
+config.nice
+config.status
+install-sh
+libtool
+missing
+mkinstalldirs
+run-tests.php
+
+# Local TLS certificates
+server.key
+server.crt
+
+# IDE configuration
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
