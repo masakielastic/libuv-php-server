@@ -202,28 +202,44 @@ int http_respond(http_request_t* request, http_response_t* response) {
     char status_line[128];
     snprintf(status_line, sizeof(status_line), "HTTP/1.1 %d OK\r\n", response->status_code);
 
-    smart_string str = {0};
-    smart_string_appends(&str, status_line);
+    size_t headers_len = 0;
     for (int i = 0; i < response->header_count; i++) {
-        smart_string_appends(&str, response->headers[i][0]);
-        smart_string_appends(&str, ": ");
-        smart_string_appends(&str, response->headers[i][1]);
-        smart_string_appends(&str, "\r\n");
+        headers_len += strlen(response->headers[i][0]) + 2 + strlen(response->headers[i][1]) + 2;
     }
-    smart_string_appendf(&str, "Content-Length: %zu\r\n", response->body_length);
-    smart_string_appends(&str, "\r\n");
+
+    char content_len_header[64];
+    snprintf(content_len_header, sizeof(content_len_header), "Content-Length: %zu\r\n", response->body_length);
+
+    size_t total_len = strlen(status_line) + headers_len + strlen(content_len_header) + 2 + response->body_length;
+    char* response_buf = (char*)malloc(total_len + 1);
+    char* p = response_buf;
+
+    strcpy(p, status_line);
+    p += strlen(status_line);
+
+    for (int i = 0; i < response->header_count; i++) {
+        p += sprintf(p, "%s: %s\r\n", response->headers[i][0], response->headers[i][1]);
+    }
+
+    strcpy(p, content_len_header);
+    p += strlen(content_len_header);
+
+    strcpy(p, "\r\n");
+    p += 2;
+
     if (response->body && response->body_length > 0) {
-        smart_string_appendl(&str, response->body, response->body_length);
+        memcpy(p, response->body, response->body_length);
     }
-    smart_string_0(&str);
+    response_buf[total_len] = '\0';
 
     if (conn->server->tls_enabled) {
-        SSL_write(conn->ssl, str.c, str.len);
+        SSL_write(conn->ssl, response_buf, total_len);
         flush_write_bio(conn);
+        free(response_buf); // Free after use
     } else {
         uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
-        uv_buf_t buf = uv_buf_init(str.c, str.len);
-        req->data = str.c;
+        uv_buf_t buf = uv_buf_init(response_buf, total_len);
+        req->data = response_buf; // Will be freed in on_write_cb
         uv_write(req, (uv_stream_t*)&conn->tcp, &buf, 1, on_write_cb);
     }
 
@@ -358,10 +374,11 @@ cleanup:
 }
 
 static void on_write_cb(uv_write_t* req, int status) {
-    if (req->data) free(req->data);
-    free(req);
-    // Don't close here for keep-alive, but for now we close
+    if (req->data) {
+        free(req->data);
+    }
     uv_close((uv_handle_t*)req->handle, on_close);
+    free(req);
 }
 
 static void flush_write_bio(http_connection_t* conn) {
