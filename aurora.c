@@ -15,8 +15,20 @@
 
 #include "libhttpserver/httpserver.h"
 
+/* PHP-Faced functions */
+PHP_FUNCTION(aurora_serve);
+PHP_FUNCTION(aurora_stop);
+
+/* Module lifecycle functions */
+PHP_MINIT_FUNCTION(aurora);
+PHP_MSHUTDOWN_FUNCTION(aurora);
+PHP_RINIT_FUNCTION(aurora);
+PHP_RSHUTDOWN_FUNCTION(aurora);
+PHP_MINFO_FUNCTION(aurora);
+
 /* Module globals */
 ZEND_DECLARE_MODULE_GLOBALS(aurora)
+
 
 // Forward declarations
 static void aurora_request_handler(http_request_t* request);
@@ -290,7 +302,10 @@ static zend_string* aurora_execute_php_file(const char* file_path, http_request_
         return zend_string_init("<h1>500 Internal Server Error</h1>", sizeof("<h1>500 Internal Server Error</h1>")-1, 0);
     }
 
-    php_output_get_contents(&result);
+    zval output_zval;
+    php_output_get_contents(&output_zval);
+    result = zval_get_string(&output_zval);
+
     php_output_end();
 
     return result;
