@@ -26,16 +26,16 @@ if test "$PHP_AURORA" != "no"; then
   ])
 
   dnl Build our static library
-  HTTPSERVER_DIR=$srcdir/libhttpserver
-  AC_MSG_CHECKING([for http server sources in $HTTPSERVER_DIR])
-  if test -d "$HTTPSERVER_DIR"; then
+  AURORA_LIB_DIR=$srcdir/libaurora
+  AC_MSG_CHECKING([for http server sources in $AURORA_LIB_DIR])
+  if test -d "$AURORA_LIB_DIR"; then
     AC_MSG_RESULT([found])
   else
     AC_MSG_ERROR([not found])
   fi
 
-  PHP_ADD_INCLUDE($HTTPSERVER_DIR)
-  AURORA_SHARED_LIBADD="-Wl,--whole-archive -L$HTTPSERVER_DIR -lhttpserver -Wl,--no-whole-archive $AURORA_SHARED_LIBADD"
+  PHP_ADD_INCLUDE($AURORA_LIB_DIR)
+  AURORA_SHARED_LIBADD="-Wl,--whole-archive -L$AURORA_LIB_DIR -laurora -Wl,--no-whole-archive $AURORA_SHARED_LIBADD"
 
   dnl Define extension
   PHP_NEW_EXTENSION(aurora, aurora.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)

@@ -3,9 +3,9 @@ AR = ar
 CFLAGS = -Wall -fPIC -I. -I/usr/include/openssl -I/usr/include/libuv
 LDFLAGS = -lssl -lcrypto -luv
 
-SRCS = httpserver.c llhttp.c http.c api.c
+SRCS = aurorahttp.c llhttp.c http.c api.c
 OBJS = $(SRCS:.c=.o)
-TARGET = libhttpserver.a
+TARGET = libaurora.a
 
 .PHONY: all clean
 

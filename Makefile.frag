@@ -1,4 +1,4 @@
-aurora.lo: libhttpserver/libhttpserver.a
+aurora.lo: libaurora/libaurora.a
 
-libhttpserver/libhttpserver.a:
-	$(MAKE) -C libhttpserver
+libaurora/libaurora.a:
+	$(MAKE) -C libaurora

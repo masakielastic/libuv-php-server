@@ -13,7 +13,7 @@
 #include "Zend/zend_execute.h"
 #include <sys/stat.h>
 
-#include "libhttpserver/httpserver.h"
+#include "libaurora/aurorahttp.h"
 
 /* PHP-Faced functions */
 PHP_FUNCTION(aurora_serve);
