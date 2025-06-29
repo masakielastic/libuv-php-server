@@ -2,6 +2,7 @@
 /modules/
 /build/
 /.libs/
+/bin/
 *.lo
 *.la
 *.o
