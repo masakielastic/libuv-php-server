@@ -306,7 +306,7 @@ static zend_string* aurora_execute_php_file(const char* file_path, http_request_
     php_output_get_contents(&output_zval);
     result = zval_get_string(&output_zval);
 
-    php_output_end();
+    php_output_discard();
 
     return result;
 }
