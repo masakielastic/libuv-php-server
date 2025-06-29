@@ -62,7 +62,13 @@ void http_response_body(http_response_t* response, const char* body, size_t leng
 int http_respond(http_request_t* request, http_response_t* response);
 void http_response_destroy(http_response_t* response);
 
-// Implementation details (when HTTPSERVER_IMPL is defined)
+#ifdef __cplusplus
+}
+#endif
+
+#endif // HTTPSERVER_H
+
+
 #ifdef HTTPSERVER_IMPL
 
 #include <openssl/ssl.h>
@@ -98,7 +104,6 @@ typedef struct {
     int handshake_complete;
     http_server_t* server;
     
-    // Parsed request data
     char* method;
     char* url;
     char* headers[MAX_HEADERS][2];
@@ -108,10 +113,7 @@ typedef struct {
     size_t body_length;
     size_t body_capacity;
 
-    // Response data
     http_response_t* pending_response;
-
-    // User data
     void* user_data;
 } http_connection_t;
 
@@ -131,7 +133,7 @@ struct http_response_s {
 static void on_new_connection(uv_stream_t* server_stream, int status);
 static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf);
 static void on_alloc(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf);
-static void on_write(uv_write_t* req, int status);
+static void on_write_cb(uv_write_t* req, int status);
 static void on_close(uv_handle_t* handle);
 
 static int on_message_begin(llhttp_t* parser);
@@ -142,16 +144,17 @@ static int on_headers_complete(llhttp_t* parser);
 static int on_body(llhttp_t* parser, const char* at, size_t length);
 static int on_message_complete(llhttp_t* parser);
 
+static void flush_write_bio(http_connection_t* conn);
+static int handle_tls_handshake(http_connection_t* conn);
+
 // --- Function Implementations ---
 
-// Request functions
-const char* http_request_method(http_request_t* request) {
-    return request->connection->method;
-}
-
-const char* http_request_target(http_request_t* request) {
-    return request->connection->url;
-}
+const char* http_request_method(http_request_t* request) { return request->connection->method; }
+const char* http_request_target(http_request_t* request) { return request->connection->url; }
+const char* http_request_body(http_request_t* request) { return request->connection->body; }
+size_t http_request_body_length(http_request_t* request) { return request->connection->body_length; }
+void* http_request_get_user_data(http_request_t* request) { return request->connection->user_data; }
+void http_request_set_user_data(http_request_t* request, void* user_data) { request->connection->user_data = user_data; }
 
 const char* http_request_header(http_request_t* request, const char* name) {
     for (int i = 0; i < request->connection->header_count; i++) {
@@ -162,32 +165,13 @@ const char* http_request_header(http_request_t* request, const char* name) {
     return NULL;
 }
 
-const char* http_request_body(http_request_t* request) {
-    return request->connection->body;
-}
-
-size_t http_request_body_length(http_request_t* request) {
-    return request->connection->body_length;
-}
-
-void* http_request_get_user_data(http_request_t* request) {
-    return request->connection->user_data;
-}
-
-void http_request_set_user_data(http_request_t* request, void* user_data) {
-    request->connection->user_data = user_data;
-}
-
-// Response functions
 http_response_t* http_response_init(void) {
     http_response_t* response = (http_response_t*)calloc(1, sizeof(http_response_t));
     response->status_code = 200;
     return response;
 }
 
-void http_response_status(http_response_t* response, int status) {
-    response->status_code = status;
-}
+void http_response_status(http_response_t* response, int status) { response->status_code = status; }
 
 void http_response_header(http_response_t* response, const char* name, const char* value) {
     if (response->header_count < MAX_HEADERS) {
@@ -208,9 +192,7 @@ void http_response_destroy(http_response_t* response) {
         free(response->headers[i][0]);
         free(response->headers[i][1]);
     }
-    if (response->body) {
-        free(response->body);
-    }
+    if (response->body) free(response->body);
     free(response);
 }
 
@@ -220,45 +202,34 @@ int http_respond(http_request_t* request, http_response_t* response) {
     char status_line[128];
     snprintf(status_line, sizeof(status_line), "HTTP/1.1 %d OK\r\n", response->status_code);
 
-    size_t response_len = strlen(status_line);
+    smart_string str = {0};
+    smart_string_appends(&str, status_line);
     for (int i = 0; i < response->header_count; i++) {
-        response_len += strlen(response->headers[i][0]) + 2 + strlen(response->headers[i][1]) + 2;
+        smart_string_appends(&str, response->headers[i][0]);
+        smart_string_appends(&str, ": ");
+        smart_string_appends(&str, response->headers[i][1]);
+        smart_string_appends(&str, "\r\n");
     }
-    char content_len_header[64];
-    snprintf(content_len_header, sizeof(content_len_header), "Content-Length: %zu\r\n", response->body_length);
-    response_len += strlen(content_len_header);
-    response_len += 2; // For final \r\n
-    response_len += response->body_length;
-
-    char* response_buf = (char*)malloc(response_len);
-    char* p = response_buf;
-
-    strcpy(p, status_line);
-    p += strlen(status_line);
-
-    for (int i = 0; i < response->header_count; i++) {
-        sprintf(p, "%s: %s\r\n", response->headers[i][0], response->headers[i][1]);
-        p += strlen(p);
-    }
-    strcpy(p, content_len_header);
-    p += strlen(content_len_header);
-    strcpy(p, "\r\n");
-    p += 2;
-
+    smart_string_appendf(&str, "Content-Length: %zu\r\n", response->body_length);
+    smart_string_appends(&str, "\r\n");
     if (response->body && response->body_length > 0) {
-        memcpy(p, response->body, response->body_length);
+        smart_string_appendl(&str, response->body, response->body_length);
+    }
+    smart_string_0(&str);
+
+    if (conn->server->tls_enabled) {
+        SSL_write(conn->ssl, str.c, str.len);
+        flush_write_bio(conn);
+    } else {
+        uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
+        uv_buf_t buf = uv_buf_init(str.c, str.len);
+        req->data = str.c;
+        uv_write(req, (uv_stream_t*)&conn->tcp, &buf, 1, on_write_cb);
     }
 
-    uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
-    uv_buf_t buf = uv_buf_init(response_buf, response_len);
-    req->data = response_buf; // To free it in on_write
-
-    uv_write(req, (uv_stream_t*)&conn->tcp, &buf, 1, on_write);
     return 0;
 }
 
-
-// Server functions
 http_server_t* http_server_create(const http_server_config_t* config) {
     http_server_t* server = (http_server_t*)calloc(1, sizeof(http_server_t));
     server->loop = uv_default_loop();
@@ -292,23 +263,17 @@ int http_server_listen(http_server_t* server) {
         return 1;
     }
     server->tcp.data = server;
-    printf("Server listening on %s:%d\n", server->host, server->port);
     return uv_run(server->loop, UV_RUN_DEFAULT);
 }
 
 void http_server_destroy(http_server_t* server) {
-    if (server->ssl_ctx) {
-        SSL_CTX_free(server->ssl_ctx);
-    }
+    if (server->ssl_ctx) SSL_CTX_free(server->ssl_ctx);
     if(server->host) free((void*)server->host);
     free(server);
 }
 
-uv_loop_t* http_server_loop(http_server_t* server) {
-    return server->loop;
-}
+uv_loop_t* http_server_loop(http_server_t* server) { return server->loop; }
 
-// Internal callbacks
 static void on_new_connection(uv_stream_t* server_stream, int status) {
     if (status < 0) {
         fprintf(stderr, "New connection error %s\n", uv_strerror(status));
@@ -321,6 +286,13 @@ static void on_new_connection(uv_stream_t* server_stream, int status) {
     conn->tcp.data = conn;
 
     if (uv_accept(server_stream, (uv_stream_t*)&conn->tcp) == 0) {
+        if (server->tls_enabled) {
+            conn->ssl = SSL_new(server->ssl_ctx);
+            conn->read_bio = BIO_new(BIO_s_mem());
+            conn->write_bio = BIO_new(BIO_s_mem());
+            SSL_set_bio(conn->ssl, conn->read_bio, conn->write_bio);
+            SSL_set_accept_state(conn->ssl);
+        }
         llhttp_settings_init(&conn->parser_settings);
         conn->parser_settings.on_message_begin = on_message_begin;
         conn->parser_settings.on_url = on_url;
@@ -339,6 +311,7 @@ static void on_new_connection(uv_stream_t* server_stream, int status) {
 
 static void on_close(uv_handle_t* handle) {
     http_connection_t* conn = (http_connection_t*)handle->data;
+    if (conn->ssl) SSL_free(conn->ssl);
     if (conn->method) free(conn->method);
     if (conn->url) free(conn->url);
     for (int i = 0; i < conn->header_count; i++) {
@@ -358,25 +331,70 @@ static void on_alloc(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) 
 static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     http_connection_t* conn = (http_connection_t*)stream->data;
     if (nread > 0) {
-        llhttp_execute(&conn->parser, buf->base, nread);
+        if (conn->server->tls_enabled) {
+            BIO_write(conn->read_bio, buf->base, nread);
+            if (!conn->handshake_complete) {
+                if (handle_tls_handshake(conn) < 0) {
+                    uv_close((uv_handle_t*)stream, on_close);
+                    goto cleanup;
+                }
+                if (!conn->handshake_complete) goto cleanup;
+            }
+            
+            char read_buf[4096];
+            int bytes_read;
+            while ((bytes_read = SSL_read(conn->ssl, read_buf, sizeof(read_buf))) > 0) {
+                llhttp_execute(&conn->parser, read_buf, bytes_read);
+            }
+            flush_write_bio(conn);
+        } else {
+            llhttp_execute(&conn->parser, buf->base, nread);
+        }
     } else if (nread < 0) {
         uv_close((uv_handle_t*)stream, on_close);
     }
+cleanup:
     if (buf->base) free(buf->base);
 }
 
-static void on_write(uv_write_t* req, int status) {
+static void on_write_cb(uv_write_t* req, int status) {
     if (req->data) free(req->data);
-    uv_close((uv_handle_t*)req->handle, on_close);
     free(req);
+    // Don't close here for keep-alive, but for now we close
+    uv_close((uv_handle_t*)req->handle, on_close);
 }
 
-// llhttp callbacks
-static int on_message_begin(llhttp_t* parser) {
-    // http_connection_t* conn = (http_connection_t*)parser->data;
-    return 0;
+static void flush_write_bio(http_connection_t* conn) {
+    int pending = BIO_pending(conn->write_bio);
+    if (pending > 0) {
+        char* buf_data = (char*)malloc(pending);
+        int bytes_read = BIO_read(conn->write_bio, buf_data, pending);
+        if (bytes_read > 0) {
+            uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
+            uv_buf_t buf = uv_buf_init(buf_data, bytes_read);
+            req->data = buf_data;
+            uv_write(req, (uv_stream_t*)&conn->tcp, &buf, 1, on_write_cb);
+        } else {
+            free(buf_data);
+        }
+    }
 }
 
+static int handle_tls_handshake(http_connection_t* conn) {
+    int r = SSL_do_handshake(conn->ssl);
+    flush_write_bio(conn);
+    if (r == 1) {
+        conn->handshake_complete = 1;
+        return 0;
+    }
+    int err = SSL_get_error(conn->ssl, r);
+    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+        return 0; // Handshake in progress
+    }
+    return -1; // Handshake failed
+}
+
+static int on_message_begin(llhttp_t* parser) { return 0; }
 static int on_url(llhttp_t* parser, const char* at, size_t length) {
     http_connection_t* conn = (http_connection_t*)parser->data;
     conn->url = (char*)malloc(length + 1);
@@ -384,18 +402,14 @@ static int on_url(llhttp_t* parser, const char* at, size_t length) {
     conn->url[length] = '\0';
     return 0;
 }
-
 static int on_header_field(llhttp_t* parser, const char* at, size_t length) {
     http_connection_t* conn = (http_connection_t*)parser->data;
-    if (conn->current_header_field) {
-        free(conn->current_header_field);
-    }
+    if (conn->current_header_field) free(conn->current_header_field);
     conn->current_header_field = (char*)malloc(length + 1);
     memcpy(conn->current_header_field, at, length);
     conn->current_header_field[length] = '\0';
     return 0;
 }
-
 static int on_header_value(llhttp_t* parser, const char* at, size_t length) {
     http_connection_t* conn = (http_connection_t*)parser->data;
     if (conn->current_header_field && conn->header_count < MAX_HEADERS) {
@@ -408,14 +422,12 @@ static int on_header_value(llhttp_t* parser, const char* at, size_t length) {
     }
     return 0;
 }
-
 static int on_headers_complete(llhttp_t* parser) {
     http_connection_t* conn = (http_connection_t*)parser->data;
     const char* method_str = llhttp_method_name(llhttp_get_method(parser));
     conn->method = strdup(method_str);
     return 0;
 }
-
 static int on_body(llhttp_t* parser, const char* at, size_t length) {
     http_connection_t* conn = (http_connection_t*)parser->data;
     if (!conn->body) {
@@ -429,7 +441,6 @@ static int on_body(llhttp_t* parser, const char* at, size_t length) {
     conn->body_length += length;
     return 0;
 }
-
 static int on_message_complete(llhttp_t* parser) {
     http_connection_t* conn = (http_connection_t*)parser->data;
     http_request_t request = { .connection = conn };
@@ -438,9 +449,3 @@ static int on_message_complete(llhttp_t* parser) {
 }
 
 #endif // HTTPSERVER_IMPL
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif // HTTPSERVER_H
