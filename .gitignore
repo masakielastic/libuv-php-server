@@ -28,6 +28,10 @@ libtool
 missing
 mkinstalldirs
 run-tests.php
+configure~
+
+# Compiled libraries
+libhttpserver/*.a
 
 # Local TLS certificates
 server.key
